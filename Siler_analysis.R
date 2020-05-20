@@ -30,7 +30,7 @@ tKD <- tKD - tB
 
 ## define censoring matrices
 cint <- cbind(tL, tM)
-censored <- ifelse(!is.na(tKD), 1, 2)
+censored <- ifelse(!is.na(tKD), 1, 0)
 tD <- rep(NA, length(tKD))
 dind <- rep(1, length(tKD))
 
