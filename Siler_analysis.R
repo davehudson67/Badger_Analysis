@@ -11,9 +11,6 @@ tKD<-readRDS("CP.dead.rds")
 CP.CVdata<-readRDS("CP.CVdata.rds")
 f<-readRDS("CP.f.rds")
 
-CH[260,53]<-1
-CH[99,80]<-1
-
 ## read in data
 tB <- CP.CVdata$birth_yr
 names(tB) <- NULL
@@ -33,7 +30,7 @@ tKD <- tKD - tB
 
 ## define censoring matrices
 cint <- cbind(tL, tM)
-censored <- ifelse(!is.na(tKD), 1, 2)
+censored <- ifelse(!is.na(tKD), 1, 0)
 tD <- rep(NA, length(tKD))
 dind <- rep(1, length(tKD))
 
