@@ -1,6 +1,6 @@
 ## Create custom Siler distribution
 
-RLW0<- nimbleRcall(function(x = double(0)){}, Rfun = 'lambertW0',
+RLW0 <- nimbleRcall(function(x = double(0)){}, Rfun = 'lambertW0',
                    returnType = double(0))
 
 
@@ -33,10 +33,10 @@ rsiler <- nimbleFunction(
     if(n != 1) print("rsiler only allows n = 1; using n = 1.")
     ## sample from two independent distributions and take minimum
     u <- runif(1, 0, 1)
-    w0 <- (exp(a1) / c) * exp((log(u) + exp(a1) / b1) * (b1 / c))
+    w0 <- (a1 / c) * exp((log(u) + a1 / b1) * (b1 / c))
     w0 <- RLW0(w0)
-    x1 <- (-1 / c) * (log(u) + exp(a1) / b1) + w0 / b1
-    x2 <- log(1 - log(runif(1, 0, 1)) * (b2 / exp(a2))) / b2
+    x1 <- (-1 / c) * (log(u) + a1 / b1) + w0 / b1
+    x2 <- log(1 - log(runif(1, 0, 1)) * (b2 / a2)) / b2
     xm <- min(x1, x2)
     return(xm)
   })
