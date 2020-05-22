@@ -5,32 +5,35 @@ library(mcmcplots)
 
 source("Dist_Siler.R")
 
-CH<-readRDS("CP.CJS_array.rds")
-age<-readRDS("CP.age_array.rds")
-tKD<-readRDS("CP.dead.rds")
-CP.CVdata<-readRDS("CP.CVdata.rds")
-f<-readRDS("CP.f.rds")
+CH <- readRDS("CP.CJS_array.rds")
+age <- readRDS("CP.age_array.rds")
+tKD <- readRDS("CP.dead.rds")
+CP.CVdata <- readRDS("CP.CVdata.rds")
+f <- readRDS("CP.f.rds")
 
 ## read in data
 tB <- CP.CVdata$birth_yr
 names(tB) <- NULL
 
-## extract max possible death time
+## extract max possible capture time
 tM <- ifelse(is.na(tKD), ncol(CH), tKD)
 
 ## extract last alive time
 tL <- apply(CH, 1, function(x) max(which(x == 1)))
+names(tL) <- NULL
 
 ## normalise to survival times
 ## (necessary at the moment due to censoring
 ## constraints)
 tM <- tM - tB
-tL <- tL - tB
 tKD <- tKD - tB
+tL <- tL - tB
 
 ## define censoring matrices
-cint <- cbind(tL, tM)
-censored <- ifelse(!is.na(tKD), 1, 0)
+cint <- cbind(tL, tKD)
+cint[is.na(tKD), 2] <- cint[is.na(tKD), 1]
+cint[is.na(tKD), 1] <- 0
+censored <- ifelse(!is.na(tKD), 1, 2)
 tD <- rep(NA, length(tKD))
 dind <- rep(1, length(tKD))
 
@@ -41,11 +44,10 @@ names(y) <- NULL
 ## set up nind
 nind <- length(y)
 
-## set up initial values
-tinit <- apply(cint, 1, function(x) {
-    runif(1, x[1], x[2])
-})
-
+# ## set up initial values
+# tinit <- apply(cint, 1, function(x) {
+#     runif(1, x[1], x[2])
+# })
 
 ## code for NIMBLE model with censoring
 CJS.code <- nimbleCode({
@@ -58,7 +60,7 @@ CJS.code <- nimbleCode({
         tD[i] ~ dsiler(a1, a2, b1, b2, c)
 
         ## sampling component
-        pd[i] <- exp(y[i] * log(mean.p) + (min(floor(tD[i]), cint[i, 2]) - y[i]) * log(1 - mean.p))
+        pd[i] <- exp(y[i] * log(mean.p) + (min(floor(tD[i]), tM[i]) - y[i]) * log(1 - mean.p))
         dind[i] ~ dbern(pd[i])
     }
 
@@ -73,11 +75,11 @@ CJS.code <- nimbleCode({
 })
 
 ## set up other components of model
-CJS.Consts <- list(nind = nind)
+CJS.Consts <- list(nind = nind, tM = tM)
 CJS.data <- list(y = y, cint = cint, 
     censored = censored, tD = tD, dind = dind)
 CJS.inits <- list(
-    tD = tinit,
+    # tD = tinit,
     a1 = 0.1, 
     a2 = 0.1, 
     b1 = 0.1,
@@ -118,9 +120,9 @@ runAF$summary
 
 #Plot mcmcm
 samples.uninf <- runAF$samples
-mcmcplot(samples.uninf)
+# mcmcplot(samples.uninf)
 png("traceAF%d.png")
-plot(samples)
+plot(samples.uninf)
 dev.off()
 
 png("pairsAF%d.png")
