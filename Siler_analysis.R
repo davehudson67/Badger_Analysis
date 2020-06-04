@@ -4,6 +4,7 @@ library(coda)
 library(mcmcplots)
 library(GGally)
 library(tidyverse)
+library(lamW)
 
 source("Dist_Siler.R")
 #source("Simulate CMR data.R")
@@ -21,6 +22,11 @@ tM <- ifelse(is.na(tKD), ncol(CH), tKD)
 tL <- apply(CH, 1, function(x) max(which(x == 1)))
 names(tL) <- NULL
 
+## some checks
+stopifnot(all(tL > tB))
+stopifnot(all(tKD[!is.na(tKD)] > tL[!is.na(tKD)]))
+stopifnot(all(tM >= tL))
+
 ## normalise to survival times
 ## (necessary at the moment due to censoring
 ## constraints)
@@ -32,6 +38,7 @@ tL <- tL - tB
 cint <- cbind(tL, tKD)
 cint[is.na(tKD), 2] <- cint[is.na(tKD), 1]
 cint[is.na(tKD), 1] <- 0
+colnames(cint) <- NULL
 censored <- ifelse(!is.na(tKD), 1, 2)
 tD <- rep(NA, length(tKD))
 dind <- rep(1, length(tKD))
@@ -39,6 +46,9 @@ dind <- rep(1, length(tKD))
 ## extract number of captures
 y <- apply(CH, 1, sum)
 names(y) <- NULL
+
+## some checks
+stopifnot(all(tM >= y))
 
 ## set up nind
 nind <- length(y)
@@ -71,22 +81,32 @@ CJS.code <- nimbleCode({
 ## set up other components of model
 CJS.Consts <- list(nind = nind, tM = tM)
 CJS.data <- list(y = y, cint = cint, 
-                 censored = censored, tD = tD, dind = dind)
+    censored = censored, tD = tD, dind = dind)
+
+## set up initial values
+tinit <- apply(cbind(cint, censored), 1, function(x) {
+  if(x[3] == 2) {
+    y <- x[2] + rexp(1, 0.1)
+  } else {
+    y <- runif(1, x[1], x[2])
+  }
+  y
+})
 CJS.inits <- list(
-  tD = apply(cint, 1, function(x) runif(1, x[1], x[2])),
-  a1 = 0.1, 
-  a2 = 0.1, 
-  b1 = 0.1,
-  b2 = 0.1,
-  mean.p = runif(1, 0, 1),
-  c = 0.05
+    tD = tinit,
+    a1 = 0.1, 
+    a2 = 0.1, 
+    b1 = 0.1,
+    b2 = 0.1,
+    mean.p = runif(1, 0, 1),
+    c = 0.05
 )
 
 ## define the model, data, inits and constants
 CJSModel <- nimbleModel(code = CJS.code, constants = CJS.Consts, data = CJS.data, inits = CJS.inits, name = "CJS")
 
 ## compile the model
-cCJSModel <- compileNimble(CJSModel, showCompilerOutput = TRUE)
+cCJSModel <- compileNimble(CJSModel)
 
 ## try with adaptive slice sampler
 CJSconfig <- configureMCMC(cCJSModel, monitors = c("a1", "a2", "b1", "b2", "c", "mean.p"), thin = 1)
@@ -139,7 +159,7 @@ p1
 x <- 0:80
 
 ## extract samples
-samples <- as.matrix(samples)[, 1:5]
+samples <- as.matrix(samples.uninf)[, 1:5]
 
 #Siler survival function
 surv <- apply(samples, 1, function(pars, x) {
@@ -156,22 +176,35 @@ surv <- apply(samples, 1, function(pars, x) {
 
 #Siler Mortality rate
 mort <- apply(samples, 1, function(pars, x) {
-  ## extract pars
-  a1 <- pars[1]
-  a2 <- pars[2]
-  b1 <- pars[3]
-  b2 <- pars[4]
-  c <- pars[5]
-  
-  ## return predictions
-  dsiler(x, a1, a2, b1, b2, c)
+    ## extract pars
+    a1 <- pars[1]
+    a2 <- pars[2]
+    b1 <- pars[3]
+    b2 <- pars[4]
+    c <- pars[5]
+    
+    ## return predictions
+    lh <- dsiler(x, a1, a2, b1, b2, c, log = 1) - psiler(x, a1, a2, b1, b2, c, lower.tail = 0, log = 1)
+    exp(lh)
 }, x = x)
-mort <- mort / surv
 
 ## extract mean and 95% intervals
 mort <- apply(mort, 1, function(x) {
   c(mean = mean(x), LCI = quantile(x, probs = 0.025), UCI = quantile(x, probs = 0.975))
 })
+
+#Siler survival function
+surv <- apply(samples, 1, function(pars, x) {
+    ## extract pars
+    a1 <- pars[1]
+    a2 <- pars[2]
+    b1 <- pars[3]
+    b2 <- pars[4]
+    c <- pars[5]
+    
+    ## return predictions
+    psiler(x, a1, a2, b1, b2, c, lower.tail = 0)
+}, x = x)
 
 ## extract mean and 95% intervals
 surv <- apply(surv, 1, function(x) {
@@ -179,7 +212,7 @@ surv <- apply(surv, 1, function(x) {
 })
 
 ## produce plots
-#pdf("survcurves.pdf", width = 10, height = 5)
+# pdf("survcurves.pdf", width = 10, height = 5)
 
 par(mfrow = c(1, 2))
 
@@ -193,4 +226,4 @@ plot(x, surv[1, ], type = "l", main = "Survivor function")
 lines(x, surv[2, ], lty = 2)
 lines(x, surv[3, ], lty = 2)
 
-#dev.off()
+# dev.off()
