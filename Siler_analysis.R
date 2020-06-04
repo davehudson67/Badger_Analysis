@@ -2,6 +2,7 @@
 library(nimble)
 library(coda)
 library(mcmcplots)
+library(lamW)
 
 source("Dist_Siler.R")
 
@@ -9,7 +10,6 @@ CH <- readRDS("CP.CJS_array.rds")
 age <- readRDS("CP.age_array.rds")
 tKD <- readRDS("CP.dead.rds")
 CP.CVdata <- readRDS("CP.CVdata.rds")
-f <- readRDS("CP.f.rds")
 
 ## read in data
 tB <- CP.CVdata$birth_yr
@@ -22,6 +22,11 @@ tM <- ifelse(is.na(tKD), ncol(CH), tKD)
 tL <- apply(CH, 1, function(x) max(which(x == 1)))
 names(tL) <- NULL
 
+## some checks
+stopifnot(all(tL > tB))
+stopifnot(all(tKD[!is.na(tKD)] > tL[!is.na(tKD)]))
+stopifnot(all(tM >= tL))
+
 ## normalise to survival times
 ## (necessary at the moment due to censoring
 ## constraints)
@@ -33,6 +38,7 @@ tL <- tL - tB
 cint <- cbind(tL, tKD)
 cint[is.na(tKD), 2] <- cint[is.na(tKD), 1]
 cint[is.na(tKD), 1] <- 0
+colnames(cint) <- NULL
 censored <- ifelse(!is.na(tKD), 1, 2)
 tD <- rep(NA, length(tKD))
 dind <- rep(1, length(tKD))
@@ -41,13 +47,11 @@ dind <- rep(1, length(tKD))
 y <- apply(CH, 1, sum)
 names(y) <- NULL
 
+## some checks
+stopifnot(all(tM >= y))
+
 ## set up nind
 nind <- length(y)
-
-# ## set up initial values
-# tinit <- apply(cint, 1, function(x) {
-#     runif(1, x[1], x[2])
-# })
 
 ## code for NIMBLE model with censoring
 CJS.code <- nimbleCode({
@@ -78,8 +82,18 @@ CJS.code <- nimbleCode({
 CJS.Consts <- list(nind = nind, tM = tM)
 CJS.data <- list(y = y, cint = cint, 
     censored = censored, tD = tD, dind = dind)
+
+## set up initial values
+tinit <- apply(cbind(cint, censored), 1, function(x) {
+  if(x[3] == 2) {
+    y <- x[2] + rexp(1, 0.1)
+  } else {
+    y <- runif(1, x[1], x[2])
+  }
+  y
+})
 CJS.inits <- list(
-    # tD = tinit,
+    tD = tinit,
     a1 = 0.1, 
     a2 = 0.1, 
     b1 = 0.1,
@@ -92,7 +106,7 @@ CJS.inits <- list(
 CJSModel <- nimbleModel(code = CJS.code, constants = CJS.Consts, data = CJS.data, inits = CJS.inits, name = "CJS")
 
 ## compile the model
-cCJSModel <- compileNimble(CJSModel, showCompilerOutput = TRUE)
+cCJSModel <- compileNimble(CJSModel)
 
 ## try with adaptive slice sampler
 CJSconfig <- configureMCMC(cCJSModel, monitors = c("a1", "a2", "b1", "b2", "c", "mean.p"), thin = 1)
@@ -121,13 +135,13 @@ runAF$summary
 #Plot mcmcm
 samples.uninf <- runAF$samples
 # mcmcplot(samples.uninf)
-png("traceAF%d.png")
+# png("traceAF%d.png")
 plot(samples.uninf)
-dev.off()
+# dev.off()
 
-png("pairsAF%d.png")
-pairs(samples)
-dev.off()
+# png("pairsAF%d.png")
+pairs(as.matrix(window(samples.uninf, thin = 8)))
+# dev.off()
 
 ## save samples
 saveRDS(samples, "newSiler.rds")
@@ -136,7 +150,7 @@ saveRDS(samples, "newSiler.rds")
 x <- 0:80
 
 ## extract samples
-samples <- as.matrix(samples)[, 1:5]
+samples <- as.matrix(samples.uninf)[, 1:5]
 
 #Siler Mortality rate
 mort <- apply(samples, 1, function(pars, x) {
@@ -148,7 +162,8 @@ mort <- apply(samples, 1, function(pars, x) {
     c <- pars[5]
     
     ## return predictions
-    exp(a1-(b1*x)) + c + exp(a2+(b2*x))
+    lh <- dsiler(x, a1, a2, b1, b2, c, log = 1) - psiler(x, a1, a2, b1, b2, c, lower.tail = 0, log = 1)
+    exp(lh)
 }, x = x)
 
 ## extract mean and 95% intervals
@@ -166,7 +181,7 @@ surv <- apply(samples, 1, function(pars, x) {
     c <- pars[5]
     
     ## return predictions
-    exp(((exp(a1))/b1)*(exp(-b1*x)-1) - c*x + ((exp(a2))/b2)*(1-exp(b2*x)))
+    psiler(x, a1, a2, b1, b2, c, lower.tail = 0)
 }, x = x)
 
 ## extract mean and 95% intervals
@@ -175,7 +190,7 @@ surv <- apply(surv, 1, function(x) {
 })
 
 ## produce plots
-pdf("survcurves.pdf", width = 10, height = 5)
+# pdf("survcurves.pdf", width = 10, height = 5)
 
 par(mfrow = c(1, 2))
 
@@ -189,5 +204,5 @@ plot(x, surv[1, ], type = "l", main = "Survivor function")
 lines(x, surv[2, ], lty = 2)
 lines(x, surv[3, ], lty = 2)
 
-dev.off()
+# dev.off()
 
