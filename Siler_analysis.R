@@ -159,7 +159,7 @@ p1
 x <- 0:80
 
 ## extract samples
-samples <- as.matrix(samples.uninf)[, 1:5]
+samples <- as.matrix(samples)[, 1:5]
 
 #Siler survival function
 surv <- apply(samples, 1, function(pars, x) {
